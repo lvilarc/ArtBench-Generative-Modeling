@@ -15,8 +15,8 @@ class ConvVAE(nn.Module):
     
     Architecture:
     - Encoder: Conv layers -> Latent space (mean & logvar)
-    - Decoder: Deconv layers -> Reconstructed image
-    - Loss: Reconstruction (BCE) + KL divergence
+    - Decoder: Deconv layers -> Reconstructed image (outputs logits, not probabilities)
+    - Loss: Reconstruction (BCE with logits) + KL divergence
     """
     
     def __init__(self, latent_dim=20, image_channels=3):
@@ -33,7 +33,7 @@ class ConvVAE(nn.Module):
         self.image_channels = image_channels
         
         # Encoder: 32x32 -> 16x16 -> 8x8 -> 4x4 -> flatten
-        self.enc_conv1 = nn.Conv2d(image_channels, 32, kernel_size=4, stride=2, padding=1)  # 16x16
+        self.enc_conv1 = nn.Conv2d(image_channels, 32, kernel_size=4, stride=2, padding=1)    # 16x16
         self.enc_conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=1)                # 8x8
         self.enc_conv3 = nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1)               # 4x4
         self.enc_conv4 = nn.Conv2d(128, 256, kernel_size=4, stride=1, padding=0)              # 1x1
@@ -52,7 +52,7 @@ class ConvVAE(nn.Module):
     
     def encode(self, x):
         """
-        Encode image to latent space.
+        Encode image to latent distribution parameters.
         
         Args:
             x: Input images [batch_size, channels, height, width]
@@ -65,7 +65,7 @@ class ConvVAE(nn.Module):
         h = F.relu(self.enc_conv2(h))
         h = F.relu(self.enc_conv3(h))
         h = F.relu(self.enc_conv4(h))
-        h = h.view(h.size(0), -1)  # Flatten
+        h = h.view(h.size(0), -1)
         
         mu = self.fc_mu(h)
         logvar = self.fc_logvar(h)
@@ -73,7 +73,7 @@ class ConvVAE(nn.Module):
     
     def reparameterize(self, mu, logvar):
         """
-        Reparameterization trick: sample from N(mu, std^2).
+        Reparameterization trick: sample z ~ N(mu, sigma^2) using noise.
         
         Args:
             mu: Mean of latent distribution
@@ -89,21 +89,22 @@ class ConvVAE(nn.Module):
     
     def decode(self, z):
         """
-        Decode latent vector to image.
+        Decode latent vector into image logits (not normalized to [0,1]).
         
         Args:
             z: Latent vector [batch_size, latent_dim]
             
         Returns:
-            x_recon: Reconstructed image [batch_size, channels, height, width]
+            x_recon: Reconstructed image logits [batch_size, channels, height, width]
         """
         h = F.relu(self.fc_dec(z))
-        h = h.view(h.size(0), 256, 1, 1)  # Reshape
+        h = h.view(h.size(0), 256, 1, 1)
         
         h = F.relu(self.dec_deconv1(h))
         h = F.relu(self.dec_deconv2(h))
         h = F.relu(self.dec_deconv3(h))
-        x_recon = self.dec_deconv4(h)  # Raw output for MSELoss
+
+        x_recon = self.dec_deconv4(h)
         return x_recon
     
     def forward(self, x):
@@ -114,7 +115,7 @@ class ConvVAE(nn.Module):
             x: Input images [batch_size, channels, height, width]
             
         Returns:
-            x_recon: Reconstructed images
+            x_recon: Reconstructed image logits
             mu: Mean of latent distribution
             logvar: Log variance of latent distribution
         """
@@ -125,7 +126,10 @@ class ConvVAE(nn.Module):
     
     def sample(self, num_samples, device):
         """
-        Generate new samples by sampling from standard normal.
+        Generate new samples from latent space.
+        
+        Note:
+            Applies sigmoid to convert logits into valid pixel values [0,1].
         
         Args:
             num_samples: Number of samples to generate
@@ -136,7 +140,8 @@ class ConvVAE(nn.Module):
         """
         with torch.no_grad():
             z = torch.randn(num_samples, self.latent_dim, device=device)
-            samples = self.decode(z)
+            logits = self.decode(z)
+            samples = torch.sigmoid(logits)
         return samples
 
 
@@ -144,20 +149,22 @@ def vae_loss(x_recon, x, mu, logvar, beta=1.0):
     """
     Compute VAE loss = Reconstruction Loss + β * KL Divergence.
     
+    Notes:
+        - Uses BCEWithLogitsLoss, so x_recon must be logits (no sigmoid applied).
+    
     Args:
-        x_recon: Reconstructed images
-        x: Original images
+        x_recon: Reconstructed image logits
+        x: Original images (in [0,1])
         mu: Mean of latent distribution
         logvar: Log variance of latent distribution
-        beta: Weight for KL divergence term (default: 1.0)
+        beta: Weight for KL divergence term
         
     Returns:
         loss: Total VAE loss
-        recon_loss: Reconstruction loss (MSE)
+        recon_loss: Reconstruction loss (BCE with logits)
         kl_loss: KL divergence loss
     """
-    # Reconstruction loss (Mean Squared Error)
-    recon_loss = F.mse_loss(x_recon, x, reduction='mean')
+    recon_loss = F.binary_cross_entropy_with_logits(x_recon, x, reduction='mean')
     
     # KL divergence loss
     kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
