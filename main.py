@@ -10,10 +10,12 @@ from training.conv_vae_trainer import ConvVAETrainer
 from training.dcgan_trainer import DCGANTrainer
 from training.diffusion_trainer import DiffusionTrainer
 from utils.metrics import compute_metrics
+from utils.logging import ExperimentLogger
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-SEEDS = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+# TESTING WITH 1 SEED - Change back to [10,20,30,40,50,60,70,80,90,100] for full run
+SEEDS = [42]
 
 # Reproducibility
 def set_seed(seed):
@@ -53,13 +55,28 @@ def build_trainer(model_name, model):
         return DiffusionTrainer(model, DEVICE, lr=1e-4, timesteps=1000, use_ema=True, ema_decay=0.9999)
 
 
-def run_experiment(model_name, loader_fn, num_epochs):
+def run_experiment(model_name, loader_fn, num_epochs, mode):
+    # Initialize logger
+    logger = ExperimentLogger(model_name, mode)
+    
+    # Log configuration
+    config = {
+        "model": model_name,
+        "mode": mode,
+        "num_epochs": num_epochs,
+        "num_seeds": len(SEEDS),
+        "seeds": SEEDS,
+        "device": str(DEVICE),
+        "batch_size": 64,
+    }
+    logger.log_config(config)
+    
     all_results = []
 
     real = get_test_images_tensor(device=DEVICE)
 
-    for seed in SEEDS:
-        print(f"\n===== {model_name.upper()} | SEED {seed} =====")
+    for seed_idx, seed in enumerate(SEEDS):
+        logger.log_seed_start(seed, seed_idx, len(SEEDS))
 
         set_seed(seed)
 
@@ -77,14 +94,26 @@ def run_experiment(model_name, loader_fn, num_epochs):
 
         # Generate samples (different interfaces for VAE vs GAN vs Diffusion)
         with torch.no_grad():
-            samples = model.sample(5000, DEVICE)
+            if model_name == "vae":
+                samples = model.sample(5000, DEVICE)
+            elif model_name == "gan":
+                samples = trainer.sample(5000)
+            elif model_name == "diffusion":
+                # Generate in batches to avoid OOM on 4GB GPU
+                batch_size = 100
+                all_samples = []
+                for i in range(0, 5000, batch_size):
+                    batch_samples = trainer.sample(min(batch_size, 5000 - i))
+                    all_samples.append(batch_samples.cpu())
+                    if (i // batch_size) % 10 == 0:
+                        print(f"  Generated {i + batch_samples.shape[0]}/5000 samples...")
+                samples = torch.cat(all_samples, dim=0).to(DEVICE)
+            else:
+                raise NotImplementedError(f"Sampling not implemented for {model_name}")
         
         if seed == SEEDS[0]:
-            save_sample_grid(
-                samples,
-                f"outputs/{model_name}/seed_{seed}_grid.png",
-                nrow=6
-            )
+            sample_path = logger.get_sample_path(seed)
+            save_sample_grid(samples, str(sample_path), nrow=6)
 
         fid, kid_mean, kid_std = compute_metrics(
             real,
@@ -92,20 +121,38 @@ def run_experiment(model_name, loader_fn, num_epochs):
             use_cuda=torch.cuda.is_available()
         )
 
-        all_results.append({
+        seed_metrics = {
             "fid": fid,
             "kid_mean": kid_mean,
             "kid_std": kid_std
-        })
+        }
+        
+        logger.log_seed_metrics(seed, seed_metrics)
+        all_results.append(seed_metrics)
 
     # Aggregate results
     fids = [r["fid"] for r in all_results]
     kid_means = [r["kid_mean"] for r in all_results]
-    kid_stds = [r["kid_std"] for r in all_results] # TODO: what we do with this? Is it correct ?
 
-    print("\n===== FINAL RESULTS =====")
-    print(f"FID: {np.mean(fids):.4f} ± {np.std(fids):.4f}")
-    print(f"KID: {np.mean(kid_means):.4f} ± {np.std(kid_means):.4f}")
+    summary = {
+        "model": model_name,
+        "mode": mode,
+        "num_seeds": len(SEEDS),
+        "fid": {
+            "mean": float(np.mean(fids)),
+            "std": float(np.std(fids)),
+            "min": float(np.min(fids)),
+            "max": float(np.max(fids))
+        },
+        "kid": {
+            "mean": float(np.mean(kid_means)),
+            "std": float(np.std(kid_means)),
+            "min": float(np.min(kid_means)),
+            "max": float(np.max(kid_means))
+        }
+    }
+    
+    logger.log_final_results(summary)
 
 
 def main():
@@ -142,7 +189,8 @@ def main():
     run_experiment(
         model_name=args.model,
         loader_fn=loader_fn,
-        num_epochs=num_epochs
+        num_epochs=num_epochs,
+        mode=args.mode
     )
 
 

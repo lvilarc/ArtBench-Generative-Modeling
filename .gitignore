@@ -1,9 +1,52 @@
 # Virtual environments
 venv/
 .venv/
+env/
 
 # ArtBench-10 Dataset
 ArtBench-10/
 
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyTorch
+*.pth
+*.pt
+*.ckpt
+
+# Experiment outputs
+experiments/
+outputs/
+results/
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
+
 # Arquivos locais
+local/
 local
