@@ -4,9 +4,11 @@ import torch
 import argparse
 from models.conv_vae_model import ConvVAE, vae_loss
 from models.dcgan_model import Generator, Discriminator, weights_init
+from models.diffusion_model import UNet
 from data import get_train_loader_from_csv, get_full_train_loader
 from training.conv_vae_trainer import ConvVAETrainer
 from training.dcgan_trainer import DCGANTrainer
+from training.diffusion_trainer import DiffusionTrainer
 from utils.metrics import compute_metrics
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -33,7 +35,7 @@ def build_model(model_name):
         return (generator, discriminator)
 
     elif model_name == "diffusion":
-        raise NotImplementedError("Diffusion not implemented yet")
+        return UNet(image_channels=3, base_channels=64, time_emb_dim=128).to(DEVICE)
 
     else:
         raise ValueError(f"Unknown model: {model_name}")
@@ -48,7 +50,7 @@ def build_trainer(model_name, model):
         return DCGANTrainer(generator, discriminator, DEVICE, lr=2e-4, label_smoothing=0.9)
 
     elif model_name == "diffusion":
-        raise NotImplementedError
+        return DiffusionTrainer(model, DEVICE, lr=1e-4, timesteps=1000, use_ema=True, ema_decay=0.9999)
 
 
 def run_experiment(model_name, loader_fn, num_epochs):
@@ -71,11 +73,13 @@ def run_experiment(model_name, loader_fn, num_epochs):
             num_epochs=num_epochs
         )
 
-        # Generate samples (different interfaces for VAE vs GAN)
+        # Generate samples (different interfaces for VAE vs GAN vs Diffusion)
         with torch.no_grad():
             if model_name == "vae":
                 samples = model.sample(5000, DEVICE)
             elif model_name == "gan":
+                samples = trainer.sample(5000)
+            elif model_name == "diffusion":
                 samples = trainer.sample(5000)
             else:
                 raise NotImplementedError(f"Sampling not implemented for {model_name}")
