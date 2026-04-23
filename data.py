@@ -50,6 +50,7 @@ from scripts.artbench_local_dataset import load_kaggle_artbench10_splits
 # print("Num classes:", num_classes)
 # print("Class names:", class_names)
 
+
 def load_train_split():
     hf_ds = load_kaggle_artbench10_splits(KAGGLE_ROOT)
     return hf_ds["train"]
@@ -61,6 +62,46 @@ def load_test_split():
 def get_class_names():
     train = load_train_split()
     return list(train.features["label"].names)
+
+def create_fixed_test_csv(
+    output_path: Path,
+    num_samples: int = 5000,
+    seed: int = 42
+):
+    test = load_test_split()
+
+    n_total = len(test)
+
+    rng = np.random.RandomState(seed)
+    indices = np.arange(n_total)
+    rng.shuffle(indices)
+
+    selected = indices[:num_samples]
+
+    rows = []
+
+    for i, idx in enumerate(selected):
+        ex = test[idx]
+
+        rows.append({
+            "selected_order": i,
+            "test_id_original": int(idx),
+            "label_id": int(ex["label"]),
+            "label_name": test.features["label"].names[int(ex["label"])]
+        })
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["selected_order", "test_id_original", "label_id", "label_name"]
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+    print(f"Saved test CSV → {output_path}")
 
 IMAGE_SIZE = 32
 BATCH_SIZE = 64
@@ -154,8 +195,11 @@ import csv
 TRAINING_CSV_PATH = Path('student_start_pack/training_20_percent.csv')
 INDEX_COLUMN = 'train_id_original'  # recommended 
 
+TEST_CSV_PATH = Path('student_start_pack/test_5000_samples.csv')
+TEST_INDEX_COLUMN = 'test_id_original'
 
-def load_ids_from_training_csv(csv_path: Path, index_column: str = "train_id_original") -> list[int]:
+
+def load_ids_from_csv(csv_path: Path, index_column: str = "train_id_original") -> list[int]:
     csv_path = Path(csv_path)
     if not csv_path.exists():
         raise FileNotFoundError(
@@ -187,7 +231,7 @@ def load_ids_from_training_csv(csv_path: Path, index_column: str = "train_id_ori
 
 def get_train_loader_from_csv(batch_size=BATCH_SIZE):
     train = load_train_split()
-    train_ids_from_csv = load_ids_from_training_csv(TRAINING_CSV_PATH, index_column=INDEX_COLUMN)
+    train_ids_from_csv = load_ids_from_csv(TRAINING_CSV_PATH, index_column=INDEX_COLUMN)
 
     dataset = HFDatasetTorch(train, transform=transform, indices=train_ids_from_csv)
 
@@ -198,6 +242,39 @@ def get_train_loader_from_csv(batch_size=BATCH_SIZE):
         num_workers=EFFECTIVE_NUM_WORKERS,
         pin_memory=torch.cuda.is_available(),
     )
+
+def get_test_loader_from_csv(batch_size=BATCH_SIZE):
+    test = load_test_split()
+
+    test_ids_from_csv = load_ids_from_csv(
+        TEST_CSV_PATH,
+        index_column=TEST_INDEX_COLUMN
+    )
+
+    dataset = HFDatasetTorch(test, transform=transform, indices=test_ids_from_csv)
+
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=EFFECTIVE_NUM_WORKERS,
+        pin_memory=torch.cuda.is_available(),
+    )
+
+def get_all_images_from_loader(loader: DataLoader, device=None):
+    images = []
+
+    for x, _, _ in loader:
+        if device is not None:
+            x = x.to(device)
+        images.append(x)
+
+    return torch.cat(images, dim=0)
+
+def get_test_images_tensor(device=None, batch_size=BATCH_SIZE):
+    loader = get_test_loader_from_csv(batch_size=batch_size)
+    images = get_all_images_from_loader(loader, device=device)
+    return images
 
 # Build a train dataset/loader using exactly those IDs
 # train_ds_from_csv = HFDatasetTorch(train_hf, transform=transform, indices=train_ids_from_csv)
@@ -288,3 +365,22 @@ EXPORT_ROOT = Path('exported_data')
 EXPORT_ROOT.mkdir(parents=True, exist_ok=True)
 
 # export_split_to_folder(train_loader, class_names, EXPORT_ROOT / 'train_subset', max_images=500)
+
+def save_sample_grid(samples: torch.Tensor, out_path: str, nrow: int = 6):
+    """
+    Saves a 6x6 grid (or configurable) of generated samples.
+    
+    Args:
+        samples: Tensor [N, C, H, W] in [0,1]
+        out_path: file path to save image
+        nrow: number of images per row (default 6 → 6x6 grid)
+    """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Take first 36 images
+    grid = make_grid(samples[: nrow * nrow], nrow=nrow, padding=2)
+
+    save_image(grid, out_path)
+
+    print(f"[Saved] sample grid → {out_path}")

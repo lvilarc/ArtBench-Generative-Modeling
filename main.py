@@ -3,7 +3,7 @@ import random
 import torch
 import argparse
 from models.conv_vae_model import ConvVAE, vae_loss
-from data import get_train_loader_from_csv, get_full_train_loader
+from data import get_train_loader_from_csv, get_full_train_loader, get_test_images_tensor, save_sample_grid
 from training.conv_vae_trainer import ConvVAETrainer
 from utils.metrics import compute_metrics
 
@@ -46,6 +46,8 @@ def build_trainer(model_name, model):
 def run_experiment(model_name, loader_fn, num_epochs):
     all_results = []
 
+    real = get_test_images_tensor(device=DEVICE)
+
     for seed in SEEDS:
         print(f"\n===== {model_name.upper()} | SEED {seed} =====")
 
@@ -66,9 +68,12 @@ def run_experiment(model_name, loader_fn, num_epochs):
         with torch.no_grad():
             samples = model.sample(5000, DEVICE)
         
-        real = sample_real_images(train_loader, 5000) # TODO: get 5000 images from the test set, fixed for all the experiments
-
-        # TODO: save samples to disk
+        if seed == SEEDS[0]:
+            save_sample_grid(
+                samples,
+                f"outputs/{model_name}/seed_{seed}_grid.png",
+                nrow=6
+            )
 
         fid, kid_mean, kid_std = compute_metrics(
             real,
@@ -113,6 +118,7 @@ def main():
     # Select dataset
     if args.mode == "subset":
         loader_fn = get_train_loader_from_csv
+        # num_epochs = 30 # FINAL CONFIG
         num_epochs = 30
 
     elif args.mode == "full":
