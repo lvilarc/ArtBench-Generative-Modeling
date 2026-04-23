@@ -4,6 +4,8 @@ import torch
 import argparse
 from models.conv_vae_model import ConvVAE, vae_loss
 from data import get_train_loader_from_csv, get_full_train_loader
+from training.conv_vae_trainer import ConvVAETrainer
+from utils.metrics import compute_metrics
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -30,6 +32,17 @@ def build_model(model_name):
         raise ValueError(f"Unknown model: {model_name}")
     
 
+def build_trainer(model_name, model):
+    if model_name == "vae":
+        return ConvVAETrainer(model, DEVICE, lr=1e-3, beta=1.0)
+
+    elif model_name == "gan":
+        raise NotImplementedError
+
+    elif model_name == "diffusion":
+        raise NotImplementedError
+
+
 def run_experiment(model_name, loader_fn, num_epochs):
     all_results = []
 
@@ -42,7 +55,7 @@ def run_experiment(model_name, loader_fn, num_epochs):
         train_loader = loader_fn()
 
         model = build_model(model_name)
-        trainer = build_trainer(model_name, model, seed)
+        trainer = build_trainer(model_name, model)
 
         trainer.fit(
             train_loader=train_loader,
@@ -50,13 +63,18 @@ def run_experiment(model_name, loader_fn, num_epochs):
             num_epochs=num_epochs
         )
 
-        samples = model.sample(5000, DEVICE)
-        real = sample_real_images(train_loader, 5000) # TODO: we should get always same 5000 images ? or random each time ?
+        with torch.no_grad():
+            samples = model.sample(5000, DEVICE)
+        
+        real = sample_real_images(train_loader, 5000) # TODO: get 5000 images from the test set, fixed for all the experiments
 
         # TODO: save samples to disk
 
-        fid = compute_fid(real, samples) # TODO
-        kid_mean, kid_std = compute_kid(real, samples) # TODO
+        fid, kid_mean, kid_std = compute_metrics(
+            real,
+            samples,
+            use_cuda=torch.cuda.is_available()
+        )
 
         all_results.append({
             "fid": fid,

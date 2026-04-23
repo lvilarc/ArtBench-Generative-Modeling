@@ -54,6 +54,9 @@ def load_train_split():
     hf_ds = load_kaggle_artbench10_splits(KAGGLE_ROOT)
     return hf_ds["train"]
 
+def load_test_split():
+    hf_ds = load_kaggle_artbench10_splits(KAGGLE_ROOT)
+    return hf_ds["test"]
 
 def get_class_names():
     train = load_train_split()
