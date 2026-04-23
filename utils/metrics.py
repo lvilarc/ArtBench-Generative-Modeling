@@ -1,117 +1,64 @@
 import torch
-import torch.nn.functional as F
-import numpy as np
-from torchvision.models import inception_v3
-from scipy import linalg
+import tempfile
+from pathlib import Path
+from PIL import Image
 
 
-# =========================
-# Inception Feature Extractor
-# =========================
-class InceptionFeatureExtractor(torch.nn.Module):
-    def __init__(self, device):
-        super().__init__()
-        self.model = inception_v3(pretrained=True, transform_input=False)
-        self.model.fc = torch.nn.Identity()  # remove classification head
-        self.model.eval()
-        self.model.to(device)
-        self.device = device
-
-    @torch.no_grad()
-    def forward(self, x):
-        # Resize to 299x299 as required by Inception
-        x = F.interpolate(x, size=(299, 299), mode="bilinear", align_corners=False)
-        x = x.to(self.device)
-        features = self.model(x)
-        return features
-
-
-# =========================
-# Feature Extraction
-# =========================
-def get_features(images, model, batch_size=64):
-    features = []
-
-    for i in range(0, len(images), batch_size):
-        batch = images[i:i+batch_size]
-        feats = model(batch)
-        features.append(feats.cpu().numpy())
-
-    return np.concatenate(features, axis=0)
-
-
-# =========================
-# FID
-# =========================
-def compute_fid(fake_images, real_images, device="cuda"):
+def to_uint8(images):
     """
-    fake_images: Tensor [N, C, H, W] in [0,1]
-    real_images: Tensor [N, C, H, W] in [0,1]
+    Convert [0,1] float tensor to uint8 [0,255]
     """
-
-    model = InceptionFeatureExtractor(device)
-
-    fake_features = get_features(fake_images, model)
-    real_features = get_features(real_images, model)
-
-    mu1, sigma1 = fake_features.mean(axis=0), np.cov(fake_features, rowvar=False)
-    mu2, sigma2 = real_features.mean(axis=0), np.cov(real_features, rowvar=False)
-
-    diff = mu1 - mu2
-
-    covmean, _ = linalg.sqrtm(sigma1 @ sigma2, disp=False)
-
-    if np.iscomplexobj(covmean):
-        covmean = covmean.real
-
-    fid = diff.dot(diff) + np.trace(sigma1 + sigma2 - 2 * covmean)
-
-    return float(fid)
+    images = (images * 255).clamp(0, 255).to(torch.uint8)
+    return images
 
 
-# =========================
-# KID (MMD with polynomial kernel)
-# =========================
-def polynomial_kernel(x, y):
-    return (x @ y.T / x.shape[1] + 1) ** 3
+def save_batch_to_dir(batch, out_dir):
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for i in range(batch.size(0)):
+        img = batch[i].permute(1, 2, 0).cpu().numpy()
+        Image.fromarray(img).save(out_dir / f"{i:05d}.png")
 
 
-def compute_kid(fake_images, real_images, device="cuda",
-                num_subsets=50, subset_size=100):
+# FID + KID
+def compute_metrics(real, generated, use_cuda=True):
     """
+    Compute FID and KID using torch-fidelity.
+
+    Args:
+        real: [N,3,32,32] float in [0,1]
+        generated: same
+
     Returns:
-        mean, std
+        fid, kid_mean, kid_std
     """
+    import torch_fidelity
 
-    model = InceptionFeatureExtractor(device)
+    real = to_uint8(real)
+    generated = to_uint8(generated)
 
-    fake_features = get_features(fake_images, model)
-    real_features = get_features(real_images, model)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        real_dir = Path(tmpdir) / "real"
+        gen_dir = Path(tmpdir) / "gen"
 
-    m = subset_size
-    scores = []
+        save_batch_to_dir(real, real_dir)
+        save_batch_to_dir(generated, gen_dir)
 
-    for _ in range(num_subsets):
-        idx_fake = np.random.choice(len(fake_features), m, replace=False)
-        idx_real = np.random.choice(len(real_features), m, replace=False)
-
-        x = fake_features[idx_fake]
-        y = real_features[idx_real]
-
-        k_xx = polynomial_kernel(x, x)
-        k_yy = polynomial_kernel(y, y)
-        k_xy = polynomial_kernel(x, y)
-
-        # unbiased MMD
-        np.fill_diagonal(k_xx, 0)
-        np.fill_diagonal(k_yy, 0)
-
-        mmd = (
-            k_xx.sum() / (m * (m - 1)) +
-            k_yy.sum() / (m * (m - 1)) -
-            2 * k_xy.mean()
+        metrics = torch_fidelity.calculate_metrics(
+            input1=str(real_dir),
+            input2=str(gen_dir),
+            cuda=use_cuda,
+            fid=True,
+            kid=True,
+            kid_subsets=50,
+            kid_subset_size=100,
+            isc=False,
+            verbose=False,
         )
 
-        scores.append(mmd)
-
-    return float(np.mean(scores)), float(np.std(scores))
+    return (
+        float(metrics["frechet_inception_distance"]),
+        float(metrics["kernel_inception_distance_mean"]),
+        float(metrics["kernel_inception_distance_std"]),
+    )
