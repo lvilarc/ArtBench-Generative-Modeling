@@ -3,8 +3,10 @@ import random
 import torch
 import argparse
 from models.conv_vae_model import ConvVAE, vae_loss
+from models.dcgan_model import Generator, Discriminator, weights_init
 from data import get_train_loader_from_csv, get_full_train_loader
 from training.conv_vae_trainer import ConvVAETrainer
+from training.dcgan_trainer import DCGANTrainer
 from utils.metrics import compute_metrics
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -23,7 +25,12 @@ def build_model(model_name):
         return ConvVAE(latent_dim=20).to(DEVICE)
 
     elif model_name == "gan":
-        raise NotImplementedError("GAN not implemented yet")
+        generator = Generator(z_dim=100).to(DEVICE)
+        discriminator = Discriminator().to(DEVICE)
+        # Initialize weights according to DCGAN paper
+        generator.apply(weights_init)
+        discriminator.apply(weights_init)
+        return (generator, discriminator)
 
     elif model_name == "diffusion":
         raise NotImplementedError("Diffusion not implemented yet")
@@ -37,7 +44,8 @@ def build_trainer(model_name, model):
         return ConvVAETrainer(model, DEVICE, lr=1e-3, beta=1.0)
 
     elif model_name == "gan":
-        raise NotImplementedError
+        generator, discriminator = model
+        return DCGANTrainer(generator, discriminator, DEVICE, lr=2e-4, label_smoothing=0.9)
 
     elif model_name == "diffusion":
         raise NotImplementedError
@@ -63,8 +71,14 @@ def run_experiment(model_name, loader_fn, num_epochs):
             num_epochs=num_epochs
         )
 
+        # Generate samples (different interfaces for VAE vs GAN)
         with torch.no_grad():
-            samples = model.sample(5000, DEVICE)
+            if model_name == "vae":
+                samples = model.sample(5000, DEVICE)
+            elif model_name == "gan":
+                samples = trainer.sample(5000)
+            else:
+                raise NotImplementedError(f"Sampling not implemented for {model_name}")
         
         real = sample_real_images(train_loader, 5000) # TODO: get 5000 images from the test set, fixed for all the experiments
 
