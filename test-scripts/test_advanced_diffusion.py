@@ -1,6 +1,10 @@
 """
 Test advanced diffusion (NO EMA, only cosine + DDIM).
 """
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import torch
 from models.diffusion_model import SimpleUNet
 from training.advanced_diffusion_trainer import AdvancedDiffusionTrainer
