@@ -1,0 +1,111 @@
+================================================================================
+Experiment: GAN - FULL
+Timestamp: 2026-04-26 06:03:31
+Device: NVIDIA GeForce GTX 1650
+================================================================================
+
+Configuration:
+  model: gan
+  mode: full
+  num_epochs: 50
+  num_seeds: 10
+  seeds: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+  device: cuda
+  batch_size: 64
+
+
+[Seed 1/10] Starting training with seed=10
+
+[Seed 10] Results:
+  fid: 56.693703
+  kid_mean: 0.033787
+  kid_std: 0.005348
+
+[Seed 2/10] Starting training with seed=20
+
+[Seed 20] Results:
+  fid: 69.131248
+  kid_mean: 0.046602
+  kid_std: 0.005677
+
+[Seed 3/10] Starting training with seed=30
+
+[Seed 30] Results:
+  fid: 56.251695
+  kid_mean: 0.034365
+  kid_std: 0.006361
+
+[Seed 4/10] Starting training with seed=40
+
+[Seed 40] Results:
+  fid: 60.912457
+  kid_mean: 0.037051
+  kid_std: 0.005031
+
+[Seed 5/10] Starting training with seed=50
+
+[Seed 50] Results:
+  fid: 61.510495
+  kid_mean: 0.039662
+  kid_std: 0.005457
+
+[Seed 6/10] Starting training with seed=60
+
+[Seed 60] Results:
+  fid: 56.457124
+  kid_mean: 0.032148
+  kid_std: 0.005035
+
+[Seed 7/10] Starting training with seed=70
+
+[Seed 7/10] Starting training with seed=70
+  Saved sample grid: experiments/gan_full_20260426_060331/samples/seed_70_samples.png
+
+[Seed 70] Results:
+  fid: 57.226524
+  kid_mean: 0.032827
+  kid_std: 0.004732
+
+[Seed 8/10] Starting training with seed=80
+  Saved sample grid: experiments/gan_full_20260426_060331/samples/seed_80_samples.png
+
+[Seed 80] Results:
+  fid: 65.830218
+  kid_mean: 0.042504
+  kid_std: 0.006563
+
+[Seed 9/10] Starting training with seed=90
+
+[Seed 9/10] Starting training with seed=90
+  Saved sample grid: experiments/gan_full_20260426_060331/samples/seed_90_samples.png
+
+[Seed 90] Results:
+  fid: 60.385325
+  kid_mean: 0.036948
+  kid_std: 0.004669
+
+[Seed 10/10] Starting training with seed=100
+  Saved sample grid: experiments/gan_full_20260426_060331/samples/seed_100_samples.png
+
+[Seed 100] Results:
+  fid: 58.734373
+  kid_mean: 0.035814
+  kid_std: 0.004897
+
+================================================================================
+FINAL RESULTS (Aggregated across all seeds)
+================================================================================
+model: gan
+mode: full
+num_seeds: 10
+fid:
+  mean: 60.313316
+  std: 4.080189
+  min: 56.251695
+  max: 69.131248
+kid:
+  mean: 0.037171
+  std: 0.004347
+  min: 0.032148
+  max: 0.046602
+================================================================================

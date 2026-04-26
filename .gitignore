@@ -27,7 +27,6 @@ results/
 vae_subset_old
 
 # Logs
-*.log
 logs/
 
 # OS files

@@ -1,0 +1,104 @@
+================================================================================
+Experiment: DIFFUSION - SUBSET
+Timestamp: 2026-04-25 21:38:35
+Device: NVIDIA GeForce GTX 1650
+================================================================================
+
+Configuration:
+  model: diffusion
+  mode: subset
+  num_epochs: 30
+  num_seeds: 10
+  seeds: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+  device: cuda
+  batch_size: 64
+
+
+[Seed 1/10] Starting training with seed=10
+
+[Seed 10] Results:
+  fid: 220.769629
+  kid_mean: 0.228578
+  kid_std: 0.013822
+
+[Seed 2/10] Starting training with seed=20
+
+[Seed 20] Results:
+  fid: 174.935593
+  kid_mean: 0.150482
+  kid_std: 0.012241
+
+[Seed 3/10] Starting training with seed=30
+
+[Seed 30] Results:
+  fid: 319.585091
+  kid_mean: 0.299967
+  kid_std: 0.021830
+
+[Seed 4/10] Starting training with seed=40
+
+[Seed 40] Results:
+  fid: 148.087941
+  kid_mean: 0.136432
+  kid_std: 0.010000
+
+[Seed 5/10] Starting training with seed=50
+
+[Seed 50] Results:
+  fid: 182.205734
+  kid_mean: 0.151988
+  kid_std: 0.013070
+
+[Seed 6/10] Starting training with seed=60
+
+[Seed 60] Results:
+  fid: 202.174124
+  kid_mean: 0.161421
+  kid_std: 0.013600
+
+[Seed 7/10] Starting training with seed=70
+
+[Seed 70] Results:
+  fid: 134.459879
+  kid_mean: 0.118516
+  kid_std: 0.011161
+
+[Seed 8/10] Starting training with seed=80
+
+[Seed 80] Results:
+  fid: 173.089647
+  kid_mean: 0.158194
+  kid_std: 0.013710
+
+[Seed 9/10] Starting training with seed=90
+
+[Seed 90] Results:
+  fid: 178.847175
+  kid_mean: 0.141348
+  kid_std: 0.008053
+
+[Seed 10/10] Starting training with seed=100
+
+[Seed 100] Results:
+  fid: 149.472774
+  kid_mean: 0.145354
+  kid_std: 0.010841
+
+================================================================================
+FINAL RESULTS (Aggregated across all seeds)
+================================================================================
+model: diffusion
+mode: subset
+num_seeds: 10
+fid:
+  mean: 188.362759
+  std: 50.042266
+  min: 134.459879
+  max: 319.585091
+kid:
+  mean: 0.169228
+  std: 0.051421
+  min: 0.118516
+  max: 0.299967
+================================================================================
+

@@ -1,0 +1,45 @@
+================================================================================
+Experiment: VAE - SUBSET
+Timestamp: 2026-04-26 22:02:46
+Device: NVIDIA GeForce GTX 1650
+================================================================================
+
+Configuration:
+  model: vae
+  mode: subset
+  num_epochs: 30
+  num_seeds: 10
+  seeds: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+  device: cuda
+  batch_size: 64
+
+
+[Seed 1/10] Starting training with seed=10
+
+[Seed 10] Results:
+  fid: 285.222015
+  kid_mean: 0.303729
+  kid_std: 0.012078
+
+[Seed 2/10] Starting training with seed=20
+
+[Seed 20] Results:
+  fid: 284.805617
+  kid_mean: 0.303296
+  kid_std: 0.012234
+
+[Seed 3/10] Starting training with seed=30
+
+[Seed 30] Results:
+  fid: 293.314757
+  kid_mean: 0.313149
+  kid_std: 0.012487
+
+[Seed 4/10] Starting training with seed=40
+
+[Seed 40] Results:
+  fid: 293.125018
+  kid_mean: 0.310170
+  kid_std: 0.011399
+
+[Seed 5/10] Starting training with seed=50
