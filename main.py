@@ -4,18 +4,19 @@ import torch
 import argparse
 from models.conv_vae_model import ConvVAE, vae_loss
 from models.dcgan_model import Generator, Discriminator, weights_init
-from models.diffusion_model import UNet
+from models.diffusion_model import SimpleUNet
 from data import get_train_loader_from_csv, get_full_train_loader, get_test_images_tensor, save_sample_grid
 from training.conv_vae_trainer import ConvVAETrainer
 from training.dcgan_trainer import DCGANTrainer
 from training.diffusion_trainer import DiffusionTrainer
+from training.advanced_diffusion_trainer import AdvancedDiffusionTrainer
 from utils.metrics import compute_metrics
 from utils.logging import ExperimentLogger
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# TESTING WITH 1 SEED - Change back to [10,20,30,40,50,60,70,80,90,100] for full run
-SEEDS = [42]
+# Full protocol: 10 seeds for statistical robustness
+SEEDS = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 
 # Reproducibility
 def set_seed(seed):
@@ -37,7 +38,10 @@ def build_model(model_name):
         return (generator, discriminator)
 
     elif model_name == "diffusion":
-        return UNet(image_channels=3, base_channels=64, time_emb_dim=128).to(DEVICE)
+        return SimpleUNet(in_channels=3, model_channels=64).to(DEVICE)
+    
+    elif model_name == "diffusion_advanced":
+        return SimpleUNet(in_channels=3, model_channels=64).to(DEVICE)
 
     else:
         raise ValueError(f"Unknown model: {model_name}")
@@ -52,7 +56,10 @@ def build_trainer(model_name, model):
         return DCGANTrainer(generator, discriminator, DEVICE, lr=2e-4, label_smoothing=0.9)
 
     elif model_name == "diffusion":
-        return DiffusionTrainer(model, DEVICE, lr=1e-4, timesteps=1000, use_ema=True, ema_decay=0.9999)
+        return DiffusionTrainer(model, DEVICE, num_timesteps=1000, beta_start=0.0001, beta_end=0.02)
+    
+    elif model_name == "diffusion_advanced":
+        return AdvancedDiffusionTrainer(model, DEVICE, schedule='cosine', num_timesteps=1000)
 
 
 def run_experiment(model_name, loader_fn, num_epochs, mode):
@@ -99,7 +106,7 @@ def run_experiment(model_name, loader_fn, num_epochs, mode):
             elif model_name == "gan":
                 samples = trainer.sample(5000)
             elif model_name == "diffusion":
-                # Generate in batches to avoid OOM on 4GB GPU
+                # Generate in batches to avoid OOM on 4GB GPU (DDPM - 1000 steps)
                 batch_size = 100
                 all_samples = []
                 for i in range(0, 5000, batch_size):
@@ -108,12 +115,24 @@ def run_experiment(model_name, loader_fn, num_epochs, mode):
                     if (i // batch_size) % 10 == 0:
                         print(f"  Generated {i + batch_samples.shape[0]}/5000 samples...")
                 samples = torch.cat(all_samples, dim=0).to(DEVICE)
+            elif model_name == "diffusion_advanced":
+                # Generate in batches with DDIM (200 steps - 5x faster)
+                batch_size = 100
+                all_samples = []
+                for i in range(0, 5000, batch_size):
+                    batch_samples = trainer.sample(min(batch_size, 5000 - i), method='ddim', ddim_steps=200)
+                    all_samples.append(batch_samples.cpu())
+                    if (i // batch_size) % 10 == 0:
+                        print(f"  Generated {i + batch_samples.shape[0]}/5000 samples...")
+                samples = torch.cat(all_samples, dim=0).to(DEVICE)
             else:
                 raise NotImplementedError(f"Sampling not implemented for {model_name}")
         
-        if seed == SEEDS[0]:
-            sample_path = logger.get_sample_path(seed)
-            save_sample_grid(samples, str(sample_path), nrow=6)
+        # Save sample grid with random selection (visual inspection)
+        indices = torch.randperm(samples.size(0))[:36]  # Random 36 samples
+        sample_path = logger.get_sample_path(seed)
+        save_sample_grid(samples[indices], str(sample_path), nrow=6)
+        print(f"  Saved sample grid: {sample_path}")
 
         fid, kid_mean, kid_std = compute_metrics(
             real,
@@ -167,8 +186,9 @@ def main():
 
     parser.add_argument(
         "--model",
-        choices=["vae", "gan", "diffusion"],
-        required=True
+        choices=["vae", "gan", "diffusion", "diffusion_advanced"],
+        required=True,
+        help="Model: vae, gan, diffusion (linear+DDPM), diffusion_advanced (cosine+DDIM)"
     )
 
     args = parser.parse_args()
