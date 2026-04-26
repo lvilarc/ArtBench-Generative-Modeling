@@ -22,9 +22,9 @@ __pycache__/
 *.ckpt
 
 # Experiment outputs
-experiments/
 outputs/
 results/
+vae_subset_old
 
 # Logs
 *.log

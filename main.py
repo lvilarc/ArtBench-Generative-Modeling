@@ -27,7 +27,7 @@ def set_seed(seed):
 
 def build_model(model_name):
     if model_name == "vae":
-        return ConvVAE(latent_dim=20).to(DEVICE)
+        return ConvVAE(latent_dim=128).to(DEVICE)
 
     elif model_name == "gan":
         generator = Generator(z_dim=100).to(DEVICE)
@@ -49,7 +49,7 @@ def build_model(model_name):
 
 def build_trainer(model_name, model):
     if model_name == "vae":
-        return ConvVAETrainer(model, DEVICE, lr=1e-3, beta=1.0)
+        return ConvVAETrainer(model, DEVICE, lr=1e-3, beta=0.5)
 
     elif model_name == "gan":
         generator, discriminator = model
@@ -181,7 +181,7 @@ def main():
         "--mode",
         choices=["subset", "full"],
         required=True,
-        help="fixed subset (20%) or full dataset"
+        help="fixed subset (20%%) or full dataset"
     )
 
     parser.add_argument(

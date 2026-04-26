@@ -1,7 +1,6 @@
 """
 Convolutional Variational Autoencoder (ConvVAE) for ArtBench-10 image generation.
-Implements a VAE with convolutional layers for learning the latent distribution
-of artwork images.
+Simple but effective architecture for 32x32 RGB images.
 """
 
 import torch
@@ -11,20 +10,19 @@ import torch.nn.functional as F
 
 class ConvVAE(nn.Module):
     """
-    Convolutional Variational Autoencoder for 32x32 images.
+    Convolutional VAE for 32x32 RGB images.
     
-    Architecture:
-    - Encoder: Conv layers -> Latent space (mean & logvar)
-    - Decoder: Deconv layers -> Reconstructed image (outputs logits, not probabilities)
-    - Loss: Reconstruction (BCE with logits) + KL divergence
+    Key features:
+    - Deeper architecture with BatchNorm for stability
+    - Moderate latent dimension (128) to capture art details
+    - MSE reconstruction loss (appropriate for continuous RGB values)
+    - Proper KL weighting to avoid posterior collapse
     """
     
-    def __init__(self, latent_dim=20, image_channels=3):
+    def __init__(self, latent_dim=128, image_channels=3):
         """
-        Initialize ConvVAE.
-        
         Args:
-            latent_dim: Dimension of the latent space (default: 20)
+            latent_dim: Dimension of latent space (default: 128)
             image_channels: Number of image channels (default: 3 for RGB)
         """
         super(ConvVAE, self).__init__()
@@ -32,23 +30,56 @@ class ConvVAE(nn.Module):
         self.latent_dim = latent_dim
         self.image_channels = image_channels
         
-        # Encoder: 32x32 -> 16x16 -> 8x8 -> 4x4 -> flatten
-        self.enc_conv1 = nn.Conv2d(image_channels, 32, kernel_size=4, stride=2, padding=1)    # 16x16
-        self.enc_conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=1)                # 8x8
-        self.enc_conv3 = nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1)               # 4x4
-        self.enc_conv4 = nn.Conv2d(128, 256, kernel_size=4, stride=1, padding=0)              # 1x1
+        # Encoder: 32x32 -> 16x16 -> 8x8 -> 4x4 -> latent
+        self.encoder = nn.Sequential(
+            # 32x32 -> 16x16
+            nn.Conv2d(image_channels, 64, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(True),
+            
+            # 16x16 -> 8x8
+            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(True),
+            
+            # 8x8 -> 4x4
+            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(True),
+            
+            # 4x4 -> 2x2
+            nn.Conv2d(256, 512, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(True),
+        )
         
-        # Flatten: 256 * 1 * 1 = 256
-        self.fc_mu = nn.Linear(256, latent_dim)
-        self.fc_logvar = nn.Linear(256, latent_dim)
+        # Latent space: 512 * 2 * 2 = 2048
+        self.fc_mu = nn.Linear(512 * 2 * 2, latent_dim)
+        self.fc_logvar = nn.Linear(512 * 2 * 2, latent_dim)
         
-        # Decoder: latent -> 4x4 -> 8x8 -> 16x16 -> 32x32
-        self.fc_dec = nn.Linear(latent_dim, 256)
+        # Decoder: latent -> 2x2 -> 4x4 -> 8x8 -> 16x16 -> 32x32
+        self.fc_decode = nn.Linear(latent_dim, 512 * 2 * 2)
         
-        self.dec_deconv1 = nn.ConvTranspose2d(256, 128, kernel_size=4, stride=1, padding=0)   # 4x4
-        self.dec_deconv2 = nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1)    # 8x8
-        self.dec_deconv3 = nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1)     # 16x16
-        self.dec_deconv4 = nn.ConvTranspose2d(32, image_channels, kernel_size=4, stride=2, padding=1)  # 32x32
+        self.decoder = nn.Sequential(
+            # 2x2 -> 4x4
+            nn.ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(True),
+            
+            # 4x4 -> 8x8
+            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(True),
+            
+            # 8x8 -> 16x16
+            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(True),
+            
+            # 16x16 -> 32x32
+            nn.ConvTranspose2d(64, image_channels, kernel_size=4, stride=2, padding=1),
+            nn.Sigmoid()  # Output in [0, 1]
+        )
     
     def encode(self, x):
         """
@@ -61,50 +92,40 @@ class ConvVAE(nn.Module):
             mu: Mean of latent distribution [batch_size, latent_dim]
             logvar: Log variance of latent distribution [batch_size, latent_dim]
         """
-        h = F.relu(self.enc_conv1(x))
-        h = F.relu(self.enc_conv2(h))
-        h = F.relu(self.enc_conv3(h))
-        h = F.relu(self.enc_conv4(h))
-        h = h.view(h.size(0), -1)
-        
+        h = self.encoder(x)
+        h = h.view(h.size(0), -1)  # Flatten
         mu = self.fc_mu(h)
         logvar = self.fc_logvar(h)
         return mu, logvar
     
     def reparameterize(self, mu, logvar):
         """
-        Reparameterization trick: sample z ~ N(mu, sigma^2) using noise.
+        Reparameterization trick: z = mu + eps * std
         
         Args:
-            mu: Mean of latent distribution
-            logvar: Log variance of latent distribution
+            mu: Mean [batch_size, latent_dim]
+            logvar: Log variance [batch_size, latent_dim]
             
         Returns:
-            z: Sampled latent vector
+            z: Sampled latent vector [batch_size, latent_dim]
         """
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
-        z = mu + eps * std
-        return z
+        return mu + eps * std
     
     def decode(self, z):
         """
-        Decode latent vector into image logits (not normalized to [0,1]).
+        Decode latent vector to image.
         
         Args:
             z: Latent vector [batch_size, latent_dim]
             
         Returns:
-            x_recon: Reconstructed image logits [batch_size, channels, height, width]
+            x_recon: Reconstructed image [batch_size, channels, height, width] in [0,1]
         """
-        h = F.relu(self.fc_dec(z))
-        h = h.view(h.size(0), 256, 1, 1)
-        
-        h = F.relu(self.dec_deconv1(h))
-        h = F.relu(self.dec_deconv2(h))
-        h = F.relu(self.dec_deconv3(h))
-
-        x_recon = self.dec_deconv4(h)
+        h = self.fc_decode(z)
+        h = h.view(h.size(0), 512, 2, 2)
+        x_recon = self.decoder(h)
         return x_recon
     
     def forward(self, x):
@@ -115,7 +136,7 @@ class ConvVAE(nn.Module):
             x: Input images [batch_size, channels, height, width]
             
         Returns:
-            x_recon: Reconstructed image logits
+            x_recon: Reconstructed images [batch_size, channels, height, width]
             mu: Mean of latent distribution
             logvar: Log variance of latent distribution
         """
@@ -126,50 +147,46 @@ class ConvVAE(nn.Module):
     
     def sample(self, num_samples, device):
         """
-        Generate new samples from latent space.
-        
-        Note:
-            Applies sigmoid to convert logits into valid pixel values [0,1].
+        Generate new samples from prior N(0, I).
         
         Args:
             num_samples: Number of samples to generate
-            device: Device to generate samples on
+            device: Device to generate on
             
         Returns:
-            samples: Generated images [num_samples, channels, height, width]
+            samples: Generated images [num_samples, channels, height, width] in [0,1]
         """
         with torch.no_grad():
             z = torch.randn(num_samples, self.latent_dim, device=device)
-            logits = self.decode(z)
-            samples = torch.sigmoid(logits)
+            samples = self.decode(z)
         return samples
 
 
 def vae_loss(x_recon, x, mu, logvar, beta=1.0):
     """
-    Compute VAE loss = Reconstruction Loss + β * KL Divergence.
+    VAE loss = Reconstruction Loss + β * KL Divergence
     
-    Notes:
-        - Uses BCEWithLogitsLoss, so x_recon must be logits (no sigmoid applied).
+    Uses MSE for reconstruction (better than BCE for RGB images).
     
     Args:
-        x_recon: Reconstructed image logits
-        x: Original images (in [0,1])
+        x_recon: Reconstructed images in [0,1]
+        x: Original images in [0,1]
         mu: Mean of latent distribution
         logvar: Log variance of latent distribution
-        beta: Weight for KL divergence term
+        beta: KL divergence weight (for annealing)
         
     Returns:
-        loss: Total VAE loss
-        recon_loss: Reconstruction loss (BCE with logits)
+        loss: Total loss
+        recon_loss: Reconstruction loss
         kl_loss: KL divergence loss
     """
-    recon_loss = F.binary_cross_entropy_with_logits(x_recon, x, reduction='mean')
+    # Reconstruction loss (MSE per pixel, summed)
+    recon_loss = F.mse_loss(x_recon, x, reduction='sum') / x.size(0)
     
-    # KL divergence loss
-    kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+    # KL divergence: -0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+    kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / x.size(0)
     
-    # Total loss
+    # Total loss with beta weighting
     loss = recon_loss + beta * kl_loss
     
     return loss, recon_loss, kl_loss

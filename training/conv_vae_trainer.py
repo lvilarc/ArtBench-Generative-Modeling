@@ -1,6 +1,6 @@
 """
 ConvVAE Trainer for ArtBench-10
-Handles training loop for Variational Autoencoder (VAE).
+Handles training with KL annealing for better convergence.
 """
 
 import torch
@@ -9,129 +9,151 @@ from models.conv_vae_model import vae_loss
 
 class ConvVAETrainer:
     """
-    Trainer for Convolutional Variational Autoencoder.
-
-    Responsibilities:
-    - Training loop
-    - Validation loop
-    - Loss optimization (Reconstruction + KL)
+    Trainer for Convolutional VAE with KL annealing.
+    
+    KL annealing gradually increases beta from 0 to target value,
+    allowing the model to first learn good reconstructions before
+    enforcing the prior constraint.
     """
 
-    def __init__(self, model, device, lr=1e-3, beta=1.0):
+    def __init__(self, model, device, lr=1e-3, beta=0.5):
         """
         Args:
             model: ConvVAE model
-            device: torch device (cuda or cpu)
+            device: torch device
             lr: learning rate
-            beta: KL divergence weight
+            beta: final KL weight (will anneal to this value)
         """
         self.model = model.to(device)
         self.device = device
-        self.beta = beta
-
+        self.target_beta = beta
+        self.current_beta = 0.0  # Start with 0 for annealing
+        
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
 
-    def train_step(self, batch):
+    def train_step(self, batch, beta):
         """
         Single training step.
-
+        
         Args:
             batch: tuple (images, labels optional)
+            beta: current beta value for KL term
+            
         Returns:
             dict of losses
         """
         self.model.train()
-
+        
         x = batch[0].to(self.device)
-
+        
+        # Forward pass
         x_recon, mu, logvar = self.model(x)
-
-        loss, recon_loss, kl_loss = vae_loss(
-            x_recon, x, mu, logvar, beta=self.beta
-        )
-
+        
+        # Compute loss
+        loss, recon_loss, kl_loss = vae_loss(x_recon, x, mu, logvar, beta=beta)
+        
+        # Backward pass
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-
+        
         return {
             "loss": loss.item(),
             "recon_loss": recon_loss.item(),
             "kl_loss": kl_loss.item()
         }
 
-    def validate_step(self, batch):
+    def validate_step(self, batch, beta):
         """
         Single validation step.
+        
+        Args:
+            batch: tuple (images, labels optional)
+            beta: current beta value for KL term
+            
+        Returns:
+            dict of losses
         """
         self.model.eval()
-
+        
         with torch.no_grad():
             x = batch[0].to(self.device)
-
+            
             x_recon, mu, logvar = self.model(x)
-
-            loss, recon_loss, kl_loss = vae_loss(
-                x_recon, x, mu, logvar, beta=self.beta
-            )
-
+            
+            loss, recon_loss, kl_loss = vae_loss(x_recon, x, mu, logvar, beta=beta)
+        
         return {
             "loss": loss.item(),
             "recon_loss": recon_loss.item(),
             "kl_loss": kl_loss.item()
         }
 
-    def fit(self, train_loader, val_loader=None, num_epochs=10):
+    def fit(self, train_loader, val_loader=None, num_epochs=30):
         """
-        Full training loop.
+        Train the VAE with KL annealing.
+        
+        Beta increases linearly from 0 to target_beta over first half of training.
+        
+        Args:
+            train_loader: DataLoader for training
+            val_loader: DataLoader for validation (optional)
+            num_epochs: Number of training epochs
         """
-
+        # KL annealing schedule: increase beta linearly over first half of training
+        anneal_epochs = num_epochs // 2
+        
         for epoch in range(num_epochs):
-
-            train_stats = {"loss": 0.0, "recon_loss": 0.0, "kl_loss": 0.0}
-
+            # Update beta (anneal over first half)
+            if epoch < anneal_epochs:
+                self.current_beta = self.target_beta * (epoch / anneal_epochs)
+            else:
+                self.current_beta = self.target_beta
+            
+            # Training
+            train_losses = {"loss": 0, "recon_loss": 0, "kl_loss": 0}
             for batch in train_loader:
-                metrics = self.train_step(batch)
-
-                for k in train_stats:
-                    train_stats[k] += metrics[k]
-
-            n = len(train_loader)
-
-            print(f"\nEpoch {epoch+1}/{num_epochs}")
-            print(
-                f"Train Loss: {train_stats['loss']/n:.4f} | "
-                f"Recon: {train_stats['recon_loss']/n:.4f} | "
-                f"KL: {train_stats['kl_loss']/n:.4f}"
-            )
-
+                batch_losses = self.train_step(batch, self.current_beta)
+                for key in train_losses:
+                    train_losses[key] += batch_losses[key]
+            
+            # Average training losses
+            for key in train_losses:
+                train_losses[key] /= len(train_loader)
+            
+            # Validation
             if val_loader is not None:
-                val_stats = {"loss": 0.0, "recon_loss": 0.0, "kl_loss": 0.0}
-
+                val_losses = {"loss": 0, "recon_loss": 0, "kl_loss": 0}
                 for batch in val_loader:
-                    metrics = self.validate_step(batch)
-
-                    for k in val_stats:
-                        val_stats[k] += metrics[k]
-
-                n = len(val_loader)
-
-                print(
-                    f"Val Loss: {val_stats['loss']/n:.4f} | "
-                    f"Recon: {val_stats['recon_loss']/n:.4f} | "
-                    f"KL: {val_stats['kl_loss']/n:.4f}"
-                )
-
-    def encode(self, x):
-        """Optional helper for latent extraction."""
-        self.model.eval()
-        with torch.no_grad():
-            x = x.to(self.device)
-            mu, logvar = self.model.encode(x)
-        return mu, logvar
+                    batch_losses = self.validate_step(batch, self.current_beta)
+                    for key in val_losses:
+                        val_losses[key] += batch_losses[key]
+                
+                # Average validation losses
+                for key in val_losses:
+                    val_losses[key] /= len(val_loader)
+                
+                print(f"\nEpoch {epoch+1}/{num_epochs} (beta={self.current_beta:.3f})")
+                print(f"Train Loss: {train_losses['loss']:.4f} | "
+                      f"Recon: {train_losses['recon_loss']:.4f} | "
+                      f"KL: {train_losses['kl_loss']:.4f}")
+                print(f"Val Loss: {val_losses['loss']:.4f} | "
+                      f"Recon: {val_losses['recon_loss']:.4f} | "
+                      f"KL: {val_losses['kl_loss']:.4f}")
+            else:
+                print(f"\nEpoch {epoch+1}/{num_epochs} (beta={self.current_beta:.3f})")
+                print(f"Train Loss: {train_losses['loss']:.4f} | "
+                      f"Recon: {train_losses['recon_loss']:.4f} | "
+                      f"KL: {train_losses['kl_loss']:.4f}")
 
     def sample(self, num_samples):
         """
-        Generate samples from latent space.
+        Generate samples from the model.
+        
+        Args:
+            num_samples: Number of samples to generate
+            
+        Returns:
+            samples: Generated images [num_samples, channels, height, width]
         """
         return self.model.sample(num_samples, self.device)
