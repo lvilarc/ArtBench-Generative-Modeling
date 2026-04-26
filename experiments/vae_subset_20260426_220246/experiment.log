@@ -43,3 +43,62 @@ Configuration:
   kid_std: 0.011399
 
 [Seed 5/10] Starting training with seed=50
+
+[Seed 50] Results:
+  fid: 301.573883
+  kid_mean: 0.326440
+  kid_std: 0.013599
+
+[Seed 6/10] Starting training with seed=60
+
+[Seed 60] Results:
+  fid: 291.000558
+  kid_mean: 0.308588
+  kid_std: 0.014315
+
+[Seed 7/10] Starting training with seed=70
+
+[Seed 70] Results:
+  fid: 293.458443
+  kid_mean: 0.315580
+  kid_std: 0.013881
+
+[Seed 8/10] Starting training with seed=80
+
+[Seed 80] Results:
+  fid: 285.698634
+  kid_mean: 0.301369
+  kid_std: 0.012092
+
+[Seed 9/10] Starting training with seed=90
+
+[Seed 90] Results:
+  fid: 272.654778
+  kid_mean: 0.285244
+  kid_std: 0.011465
+
+[Seed 10/10] Starting training with seed=100
+
+[Seed 100] Results:
+  fid: 280.595562
+  kid_mean: 0.296204
+  kid_std: 0.012424
+
+================================================================================
+FINAL RESULTS (Aggregated across all seeds)
+================================================================================
+model: vae
+mode: subset
+num_seeds: 10
+fid:
+  mean: 288.144927
+  std: 7.686805
+  min: 272.654778
+  max: 301.573883
+kid:
+  mean: 0.306377
+  std: 0.010696
+  min: 0.285244
+  max: 0.326440
+================================================================================
+

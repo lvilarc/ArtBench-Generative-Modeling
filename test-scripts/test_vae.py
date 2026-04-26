@@ -45,9 +45,8 @@ train_loader = get_train_loader_from_csv()
 print(f"Training batches: {len(train_loader)}")
 print()
 
-# Train 10 epochs (quick test)
-print("Training 10 epochs...")
-trainer.fit(train_loader, val_loader=train_loader, num_epochs=10)
+print("Training 5 epochs...")
+trainer.fit(train_loader, val_loader=train_loader, num_epochs=5)
 print()
 
 # Generate samples
